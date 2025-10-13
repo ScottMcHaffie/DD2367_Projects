@@ -9,8 +9,6 @@ from qiskit.visualization import plot_histogram
 from qiskit import QuantumRegister, ClassicalRegister
 
 
-
-
 DTYPE = np.complex128
 
 ## Declare class for Shor Algorithm circuit and subroutine functions ##
@@ -107,8 +105,24 @@ class ShorCircuit:
 
     # Inverse QFT
     def shor_inverse_qft(self):
-        pass
+        i=0
+        # Step 1: For loop over working bits in reverse order
+        for idx in reversed(range(self.working_bits)):
+            i=i+1
+            
+            # Step 3: Apply controlled phase rotations to all lesser significant bits
+            for jdx in reversed(range(self.working_bits - idx - 1)):
+                # Calculate phase angle
+                c_phase_angle = -np.pi / (2 ** (jdx + 1))
 
+                # Apply controlled phase rotation
+                self.full_circuit.cp(c_phase_angle, self.working_bits-idx - 1, self.working_bits-idx - 2 - jdx)
+            
+            # Step 2: Apply Hadamard gate to the current bit
+            self.full_circuit.h(self.working_bits-idx - 1)
+            # Draw barrier after each qft stage
+            self.full_circuit.barrier(label=f'invQFT {i}')
+        pass
 
     # Overall Circuit
     def shor_overall_circuit(self):
@@ -132,7 +146,8 @@ class ShorCircuit:
 ## Testing ##
 f = ShorCircuit(2, 4, 2)
 f.shor_qft()
+f.shor_inverse_qft()
 #f.shor_overall_circuit()
 f.shor_draw(scale=0.5)
-f.shor_circle_viz()
+# f.shor_circle_viz()
 
