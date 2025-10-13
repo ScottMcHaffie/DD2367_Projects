@@ -9,12 +9,7 @@ from qiskit.visualization import plot_histogram
 from qiskit import QuantumRegister, ClassicalRegister
 
 
-# Function to get statevector from Aer simulator
-def statevector_from_aer(circ: QuantumCircuit) -> np.ndarray:
-    backend = Aer.get_backend("aer_simulator_statevector")
-    tqc = transpile(circ, backend)
-    result = backend.run(tqc).result()
-    return np.asarray(result.get_statevector(tqc), dtype=np.complex128)
+
 
 DTYPE = np.complex128
 
@@ -56,10 +51,11 @@ class ShorCircuit:
     # Controlled Multiplication by 2
     def controlled_multiplication_by_2(self, control_bit: int):
         for idx in range(self.working_bits-1):
-        
+
+            # Controlled SWAP between qubits in working register, starting from MSB <--> MSB - 1 ... down to LSB <--> LSB + 1
             self.full_circuit.cswap(
                 control_qubit=self.working_bits+control_bit, 
-                target_qubit1=self.working_bits - idx- 1, 
+                target_qubit1=self.working_bits - idx - 1, 
                 target_qubit2=self.working_bits - idx - 2
                 )
         return 
@@ -67,38 +63,76 @@ class ShorCircuit:
 
     # Modular Exponentiation
     def modular_exponentiation(self):
-        
+    
         # Step 1: Put precision register in full binary state
-        [self.precision_register.h(idx) for idx in range(self.precision_bits)]
+        [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
 
         # Step 2: Put LSB bit of working register in state |1>
-        self.working_register.x(0)
+        self.full_circuit.x(0)
+        # Step 2.1: Barrier
+        self.full_circuit.barrier(label='ME Init')
 
         # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
         for idx in range(self.precision_bits):
             for exp in range(idx+1):
                 self.controlled_multiplication_by_2(control_bit=idx)
+
+            # Draw barrier after each modular exponentiation stage
+            self.full_circuit.barrier(label='ME 2^' + str(idx + 1))
         pass
 
     # QFT
-    def qft(self):
-        pass    
+    def shor_qft(self):
+        
+        # Step 1: For loop over working bits in reverse order
+        for idx in range(self.working_bits):
+            # Step 2: Apply Hadamard gate to the current bit
+            self.full_circuit.h(self.working_bits-idx - 1)
+
+            # Step 3: Apply controlled phase rotations to all lesser significant bits
+            if idx == self.working_bits - 1:
+                self.full_circuit.barrier(label=f'QFT {idx+1}')
+                break
+
+            for jdx in range(self.working_bits - idx - 1):
+                # Calculate phase angle
+                c_phase_angle = np.pi / (2 ** (jdx + 1))
+
+                # Apply controlled phase rotation
+                self.full_circuit.cp(c_phase_angle, self.working_bits-idx - 1, self.working_bits-idx - 2 - jdx)
+            
+            # Draw barrier after each qft stage
+            self.full_circuit.barrier(label=f'QFT {idx+1}')
+        pass 
 
     # Inverse QFT
-    def inverse_qft(self):
+    def shor_inverse_qft(self):
         pass
 
+
+    # Overall Circuit
+    def shor_overall_circuit(self):
+        self.modular_exponentiation()
+        self.shor_qft()
+        pass
 
     ## PLOTTING FUNCTIONS ##
     # Draw the full circuit    
-    def circuit_draw(self):
-        self.full_circuit.draw("mpl", initial_state=True)
+    def shor_draw(self, scale):
+        self.full_circuit.draw("mpl", initial_state=True, scale = 0.5)
         plt.show()
         pass
 
-f = ShorCircuit(2, 4, 4)
-f.modular_exponentiation()
-f.circuit_draw()
+    # Circle Notation of final Statevector
+    def shor_circle_viz(self):
+        state_vec = Statevector(self.full_circuit)
+        QubitSystem(statevector=state_vec, label="Final state").viz_circle()
+        pass
 
-
+## Testing ##
+f = ShorCircuit(2, 4, 2)
+f.shor_qft()
+#f.shor_overall_circuit()
+f.shor_draw(scale=0.5)
+f.shor_circle_viz()
 
