@@ -36,6 +36,7 @@ class ShorCircuit:
         self.base = a
         self.working_bits = working_bits
         self.precision_bits = precision_bits
+        self.flag_bit = self.precision_bits + self.working_bits
 
         ## Circuit initialisation ##
         # Working Register: Quantum + Classical
@@ -49,9 +50,14 @@ class ShorCircuit:
             ClassicalRegister(precision_bits, name='Readout'), 
             name="Precision Register")
         
+        # Flag Register: Quantum only
+        self.flag_register = QuantumCircuit(
+            QuantumRegister(1, name='F'), 
+            name="Flag Register"
+        )
         # Full Circuit: Working + Precision
-        self.full_circuit = self.precision_register.tensor(self.working_register)
-        self.full_circuit.name = "Shor's Circuit"
+        self.full_circuit = self.flag_register.tensor(self.precision_register)
+        self.full_circuit = self.full_circuit.tensor(self.working_register)
         self.full_circuit.barrier()
         pass
     
@@ -202,14 +208,14 @@ class ShorCircuit:
         pass
 
 ## Testing ##
-f = ShorCircuit(2, 4, 4)
-f.modular_exponentiation()
-f.shor_qft()
-# f.shor_precision_measure()
-f.inverse_shor_qft()
+f = ShorCircuit(2, 7, 0)
+f.inc_pow_2(6)
+f.full_circuit.barrier(label='init')
 
-QubitSystem(Statevector(f.full_circuit)).viz_circle_with_mag(working_bits=f.working_bits, precision_bits=f.precision_bits)
-f_circuit = f.full_circuit.copy()
-f_circuit.save_statevector()
-f_sv = statevector_from_aer(f_circuit)
-QubitSystem(f_sv).viz_circle_with_mag(working_bits=f.working_bits, precision_bits=f.precision_bits)
+f.controlled_geq_check('dec35', 1)
+
+#f.shor_draw(scale=0.7)
+#f.shor_circle_viz()
+print(np.real(np.round(Statevector(f.full_circuit), 0)))
+
+
