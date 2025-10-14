@@ -26,6 +26,7 @@ class ShorCircuit:
         self.base = a
         self.working_bits = working_bits
         self.precision_bits = precision_bits
+        self.flag_bit = self.precision_bits + self.working_bits
 
         ## Circuit initialisation ##
         # Working Register: Quantum + Classical
@@ -39,12 +40,18 @@ class ShorCircuit:
             QuantumRegister(precision_bits, name='P'), 
             name="Precision Register")
         
+        # Flag Register: Quantum only
+        self.flag_register = QuantumCircuit(
+            QuantumRegister(1, name='F'), 
+            name="Flag Register"
+        )
         # Full Circuit: Working + Precision
-        self.full_circuit = self.precision_register.tensor(self.working_register)
+        self.full_circuit = self.flag_register.tensor(self.precision_register)
+        self.full_circuit = self.full_circuit.tensor(self.working_register)
         self.full_circuit.barrier()
         pass
         
-    ## SUBROUTINE FUNCTIONS ON QUANTUM CIRCUITS ##
+    ## ---- SUBROUTINE FUNCTIONS ON QUANTUM CIRCUITS ---- ##
 
     # Controlled Multiplication by 2
     def controlled_multiplication_by_2(self, control_bit: int):
@@ -57,6 +64,169 @@ class ShorCircuit:
                 target_qubit2=self.working_bits - idx - 2
                 )
         return 
+    
+    ## Increment/Decrement Operators ##
+
+    # Increment by 2^M :
+
+    def inc_pow_2(self, power_of_two):
+        for idx in range(self.working_bits - power_of_two):
+            if idx == self.working_bits - power_of_two - 1:
+                self.full_circuit.x(power_of_two)
+                break
+
+            control_bits = []
+            for jdx in range(self.working_bits - power_of_two - idx - 1):
+                control_bits.append(jdx + power_of_two)
+            self.full_circuit.mcx(control_qubits=control_bits, target_qubit=self.working_bits - idx - 1)
+        pass
+
+    # Controlled Increment by 2^M    
+    def cont_inc_pow_2(self, power_of_two): 
+        for idx in range(self.working_bits - power_of_two):
+            # For last bit
+            if idx == self.working_bits - power_of_two - 1:
+                self.full_circuit.cx(
+                    control_qubit=self.flag_bit, 
+                    target_qubit=power_of_two
+                    )
+                break
+            
+            # For other bits
+            control_bits = []
+            for jdx in range(self.working_bits - power_of_two - idx - 1):
+                control_bits.append(jdx + power_of_two)
+            control_bits.append(self.flag_bit)
+            self.full_circuit.mcx(control_qubits=control_bits, target_qubit=self.working_bits - idx - 1)
+        pass
+
+    # Decrement by 2^M :
+    def dec_pow_2(self, power_of_two):
+        for idx in range(self.working_bits - power_of_two):
+            if idx == 0:
+                self.full_circuit.x(power_of_two)
+            else:
+                control_bits = []
+                for jdx in range(idx):
+                    control_bits.append(power_of_two + jdx)
+
+                self.full_circuit.mcx(
+                    control_qubits=control_bits, 
+                    target_qubit=power_of_two + idx
+                    )
+        pass
+
+    # Decrement 15 :
+    def dec15(self):
+        self.dec_pow_2(power_of_two=3)
+        self.full_circuit.barrier(label=f'- 2^{3}')
+        self.dec_pow_2(power_of_two=2)
+        self.full_circuit.barrier(label=f'- 2^{2}')
+        self.dec_pow_2(power_of_two=1)
+        self.full_circuit.barrier(label=f'- 2^{1}')
+        self.dec_pow_2(power_of_two=0)
+        self.full_circuit.barrier(label=f'- 2^{0}')
+        pass
+    
+    # Controlled Increment 15:
+    def cont_inc_15(self):
+        self.cont_inc_pow_2(power_of_two=0)
+        self.full_circuit.barrier(label=f'+ 2^{0}')
+        self.cont_inc_pow_2(power_of_two=1)
+        self.full_circuit.barrier(label=f'+ 2^{1}')
+        self.cont_inc_pow_2(power_of_two=2)
+        self.full_circuit.barrier(label=f'+ 2^{2}')
+        self.cont_inc_pow_2(power_of_two=3)
+        self.full_circuit.barrier(label=f'+ 2^{3}')
+        pass
+
+    # Decrement 21 : 
+    def dec21(self):
+        self.dec_pow_2(power_of_two=4)
+        self.dec_pow_2(power_of_two=2)
+        self.dec_pow_2(power_of_two=0)
+        pass
+
+    # Controlled Increment 21:
+    def cont_inc_21(self):
+        self.cont_inc_pow_2(power_of_two=0)
+        self.cont_inc_pow_2(power_of_two=2)
+        self.cont_inc_pow_2(power_of_two=4)
+        pass
+        
+    # Decrement 33 :
+    def dec33(self):
+        self.dec_pow_2(power_of_two=5)
+        self.dec_pow_2(power_of_two=0)
+        pass
+
+    # Controlled Increment 33:
+    def cont_inc_33(self):
+        self.cont_inc_pow_2(power_of_two=0)
+        self.cont_inc_pow_2(power_of_two=5)
+        pass
+
+    # Decrement 35 : 
+    def dec35(self):
+        self.dec_pow_2(power_of_two=5)
+        self.dec_pow_2(power_of_two=1)
+        self.dec_pow_2(power_of_two=0)
+        pass
+
+    # Controlled Increment 35:
+    def cont_inc_35(self):
+        self.cont_inc_pow_2(power_of_two=0)
+        self.cont_inc_pow_2(power_of_two=1)
+        self.cont_inc_pow_2(power_of_two=5)
+        pass
+
+    # >= N check, k times
+    def controlled_geq_check(self, decrement_value, k):
+        for i in range(k):
+            if decrement_value == 'dec15':
+                self.dec15()
+                self.full_circuit.cx(
+                    control_qubit=self.working_bits- 1, 
+                    target_qubit=self.flag_bit
+                    )
+                self.full_circuit.barrier(label="C-NOT Flag")
+                self.cont_inc_15()
+
+            elif decrement_value == 'dec21':
+                self.dec21()
+                self.full_circuit.cx(
+                    control_qubit=self.working_bits-1, 
+                    target_qubit=self.flag_bit
+                    )
+                self.cont_inc_21()
+
+            elif decrement_value == 'dec33':
+                self.dec33()
+                self.full_circuit.cx(
+                    control_qubit=self.working_bits-1, 
+                    target_qubit=self.flag_bit
+                    )
+                self.cont_inc_33()
+            
+            elif decrement_value == 'dec35':
+                self.dec35()
+                self.full_circuit.cx(
+                    control_qubit=self.working_bits-1, 
+                    target_qubit=self.flag_bit
+                    )
+                self.cont_inc_35()
+
+        # Reverse flag qubit back to initial state
+        self.full_circuit.x(self.working_bits - 1)
+        self.full_circuit.cx(
+            control_qubit=self.working_bits - 1,
+            target_qubit=self.flag_bit
+        )        
+        self.full_circuit.x(self.working_bits - 1)
+
+        # Barrier
+        self.full_circuit.barrier(label='Reverse flag qubit')
+        pass
 
 
     # Modular Exponentiation
@@ -144,10 +314,14 @@ class ShorCircuit:
         pass
 
 ## Testing ##
-f = ShorCircuit(2, 4, 2)
-f.shor_qft()
-f.shor_inverse_qft()
-#f.shor_overall_circuit()
-f.shor_draw(scale=0.5)
-# f.shor_circle_viz()
+f = ShorCircuit(2, 7, 0)
+f.inc_pow_2(6)
+f.full_circuit.barrier(label='init')
+
+f.controlled_geq_check('dec35', 1)
+
+#f.shor_draw(scale=0.7)
+#f.shor_circle_viz()
+print(np.real(np.round(Statevector(f.full_circuit), 0)))
+
 
