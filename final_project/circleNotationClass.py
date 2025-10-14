@@ -70,3 +70,102 @@ class QubitSystem:
         fig.suptitle(self.label, fontsize=12)
         plt.tight_layout()
         plt.show()
+        
+    def viz_circle_with_mag(self, max_cols: int = 8, figsize_scale: float = 2.3, tol: float = 1e-9, working_bits: int = 0, precision_bits: int = 0, reverse_bits: bool = False):
+        use_new_labels = working_bits > 0 or precision_bits > 0
+        if use_new_labels:
+            if working_bits > 0 and precision_bits == 0:
+                precision_bits = self.n_qubits - working_bits
+            elif precision_bits > 0 and working_bits == 0:
+                working_bits = self.n_qubits - precision_bits
+
+            if working_bits + precision_bits != self.n_qubits or working_bits < 0 or precision_bits < 0:
+                raise ValueError(
+                    f"Sum of working ({working_bits}) and precision ({precision_bits}) bits "
+                    f"must equal total qubits ({self.n_qubits}) and be non-negative."
+                )
+
+        def get_title(state_idx):
+            bitstring = format(state_idx, f'0{self.n_qubits}b')
+
+            if not use_new_labels:
+                if reverse_bits:
+                    bitstring = bitstring[::-1]
+                return f"|{bitstring}⟩"
+            else:
+                # When using P/W labels, reverse_bits only applies to the precision part
+                precision_str = bitstring[:precision_bits]
+                working_str = bitstring[precision_bits:]
+
+                if reverse_bits:
+                    precision_str = precision_str[::-1]
+
+                precision_val = int(precision_str, 2) if precision_str else 0
+                working_val = int(working_str, 2) if working_str else 0
+                return f"P|{precision_val}⟩ W|{working_val}⟩"
+
+        mag_indices = np.where(self.prob > tol)[0]
+
+        # --- Sort the indices by Precision then Working bits if applicable ---
+        if use_new_labels and len(mag_indices) > 0:
+            states_to_sort = []
+            for state_idx in mag_indices:
+                bitstring = format(state_idx, f'0{self.n_qubits}b')
+                precision_str = bitstring[:precision_bits]
+                working_str = bitstring[precision_bits:]
+
+                if reverse_bits:
+                    precision_str = precision_str[::-1]
+
+                precision_val = int(precision_str, 2) if precision_str else 0
+                working_val = int(working_str, 2) if working_str else 0
+                states_to_sort.append((precision_val, working_val, state_idx))
+
+            # Sort by P, then W, then original index as a tie-breaker
+            states_to_sort.sort()
+
+            # Overwrite mag_indices with the new sorted order
+            mag_indices = [item[2] for item in states_to_sort]
+        # --- End Sorting ---
+
+        n_to_plot = len(mag_indices)
+
+        if n_to_plot == 0:
+            print(f"No states with probability > {tol} to plot for '{self.label}'.")
+            return
+
+        cols = max(1, min(max_cols, n_to_plot))
+        rows = int(math.ceil(n_to_plot / cols))
+
+        fig, axes = plt.subplots(
+            rows, cols,
+            figsize=(cols * figsize_scale, rows * (figsize_scale + 0.2)),
+            squeeze=False
+        )
+        axes_flat = axes.flatten()
+
+        for i in range(len(axes_flat)):
+            ax = axes_flat[i]
+            if i >= n_to_plot:
+                ax.set_visible(False)
+                continue
+
+            ax.set_aspect("equal")
+            ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+            ax.axis("off")
+            state_idx = mag_indices[i]
+            ax.add_patch(plt.Circle((0.5, 0.5), 0.48, fill=False, lw=1.0, alpha=0.5))
+            radius = 0.48 * np.sqrt(self.prob[state_idx])
+            ax.add_patch(plt.Circle((0.5, 0.5), radius, alpha=0.25))
+            angle = self.phase[state_idx]
+            L = 0.45
+            x2 = 0.5 + L * np.cos(angle)
+            y2 = 0.5 + L * np.sin(angle)
+            ax.arrow(0.5, 0.5, x2 - 0.5, y2 - 0.5,
+                     head_width=0.03, head_length=0.05, length_includes_head=True)
+
+            ax.set_title(get_title(state_idx), fontsize=10)
+
+        fig.suptitle(f"{self.label} (states with magnitude)", fontsize=12)
+        plt.tight_layout()
+        plt.show()
