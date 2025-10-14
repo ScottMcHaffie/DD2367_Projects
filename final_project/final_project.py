@@ -1,17 +1,27 @@
 # imports
+
+#%%
+import matplotlib
+# matplotlib.use('module://matplotlib_inline.backend_inline')
 import numpy as np
 import matplotlib.pyplot as plt
-from circleNotationClass import QubitSystem
+import circleNotationClass
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import Aer
 from qiskit.quantum_info import Statevector
 from qiskit.visualization import plot_histogram
 from qiskit import QuantumRegister, ClassicalRegister
+import importlib
+importlib.reload(circleNotationClass)
+from circleNotationClass import QubitSystem
+from qiskit.primitives import BackendSamplerV2
+from qiskit_aer import AerSimulator
 
-
-DTYPE = np.complex128
-
-## Declare class for Shor Algorithm circuit and subroutine functions ##
+def statevector_from_aer(circ: QuantumCircuit) -> np.ndarray:
+    backend = Aer.get_backend("aer_simulator_statevector")
+    tqc = transpile(circ, backend)
+    result = backend.run(tqc).result()
+    return np.asarray(result.get_statevector(tqc), dtype=np.complex128)
 
 class ShorCircuit:
 
@@ -31,21 +41,67 @@ class ShorCircuit:
         # Working Register: Quantum + Classical
         self.working_register = QuantumCircuit(
             QuantumRegister(working_bits, name='W'), 
-            ClassicalRegister(working_bits, name='Readout'), 
             name="Working Register")
         
         # Precision Register: Quantum only
         self.precision_register = QuantumCircuit(
-            QuantumRegister(precision_bits, name='P'), 
+            QuantumRegister(precision_bits, name='P'),
+            ClassicalRegister(precision_bits, name='Readout'), 
             name="Precision Register")
         
         # Full Circuit: Working + Precision
         self.full_circuit = self.precision_register.tensor(self.working_register)
+        self.full_circuit.name = "Shor's Circuit"
         self.full_circuit.barrier()
         pass
+    
+    ## Helper Methods to Create Reusable Gates ##
+    def _create_mod_exp_gate(self) -> 'Gate':
+        n_p = self.precision_bits
+        n_w = self.working_bits
         
-    ## SUBROUTINE FUNCTIONS ON QUANTUM CIRCUITS ##
+        mod_exp_circ = QuantumCircuit(n_p + n_w, name="ModExp")
 
+        [mod_exp_circ.h(n_w + idx) for idx in range(n_p)]
+
+        mod_exp_circ.x(0)
+        
+        for idx in range(n_p ):
+            for _ in range(idx + 1):
+                control_qubit_local = n_w + idx
+                for swap_idx in range(n_w - 1):
+                    target1 = n_w - swap_idx - 1
+                    target2 = n_w - swap_idx - 2
+                    mod_exp_circ.cswap(control_qubit_local, target1, target2)
+            
+        return mod_exp_circ.to_gate(label="ModExp")
+
+
+    def _create_qft_gate(self,inv: bool = False) -> 'Gate':
+
+        n = self.precision_bits
+        qft_circ = QuantumCircuit(n, name="QFT")
+
+        # --- QFT Logic (Hadamards and Controlled Rotations) ---
+        # Based on your original implementation
+        for idx in range(n):
+            target_h = n - 1 - idx
+            qft_circ.h(target_h)
+            
+            for jdx in range(n - 1 - idx):
+                if inv:
+                    c_phase_angle = np.pi / (2 ** (jdx + 1))
+                else:
+                    c_phase_angle = -np.pi / (2 ** (jdx + 1))
+                control_cp = n - 1 - idx
+                target_cp = n - 2 - idx - jdx
+                qft_circ.cp(c_phase_angle, control_cp, target_cp)
+        
+        # --- SWAP Gates ---
+        for idx in range(n // 2):
+            qft_circ.swap(idx, n - 1 - idx)
+        return qft_circ.to_gate(label="QFT")
+    
     # Controlled Multiplication by 2
     def controlled_multiplication_by_2(self, control_bit: int):
         for idx in range(self.working_bits-1):
@@ -58,70 +114,62 @@ class ShorCircuit:
                 )
         return 
 
-
+    ## Subroutines Applied to the Main Circuit ##
+    
     # Modular Exponentiation
     def modular_exponentiation(self):
-    
-        # Step 1: Put precision register in full binary state
-        [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
 
-        # Step 2: Put LSB bit of working register in state |1>
-        self.full_circuit.x(0)
-        # Step 2.1: Barrier
-        self.full_circuit.barrier(label='ME Init')
-
-        # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
-        for idx in range(self.precision_bits):
-            for exp in range(idx+1):
-                self.controlled_multiplication_by_2(control_bit=idx)
-
-            # Draw barrier after each modular exponentiation stage
-            self.full_circuit.barrier(label='ME 2^' + str(idx + 1))
+        if self.precision_bits == 0 and self.working_bits == 0:
+            return
+            
+        mod_exp_gate = self._create_mod_exp_gate()
+        
+        # Apply the gate to all qubits in the circuit
+        all_qubits = range(self.working_bits + self.precision_bits)
+        self.full_circuit.append(mod_exp_gate, all_qubits)
+        self.full_circuit.barrier(label='ModExp') # This barrier is fine
         pass
+
 
     # QFT
     def shor_qft(self):
-        
-        # Step 1: For loop over working bits in reverse order
-        for idx in range(self.working_bits):
-            # Step 2: Apply Hadamard gate to the current bit
-            self.full_circuit.h(self.working_bits-idx - 1)
 
-            # Step 3: Apply controlled phase rotations to all lesser significant bits
-            if idx == self.working_bits - 1:
-                self.full_circuit.barrier(label=f'QFT {idx+1}')
-                break
-
-            for jdx in range(self.working_bits - idx - 1):
-                # Calculate phase angle
-                c_phase_angle = np.pi / (2 ** (jdx + 1))
-
-                # Apply controlled phase rotation
-                self.full_circuit.cp(c_phase_angle, self.working_bits-idx - 1, self.working_bits-idx - 2 - jdx)
+        if self.precision_bits == 0:
+            return
             
-            # Draw barrier after each qft stage
-            self.full_circuit.barrier(label=f'QFT {idx+1}')
-        pass 
+        # 1. Create the QFT gate from the helper method
+        qft_gate = self._create_qft_gate()
+
+        # 2. Define the qubits for the gate (the precision register)
+        precision_qubits = range(self.working_bits, self.working_bits + self.precision_bits)
+        
+        # 3. Append the gate to the circuit
+        self.full_circuit.append(qft_gate, precision_qubits)
+        self.full_circuit.barrier(label='QFT')
+        pass
 
     # Inverse QFT
-    def shor_inverse_qft(self):
-        i=0
-        # Step 1: For loop over working bits in reverse order
-        for idx in reversed(range(self.working_bits)):
-            i=i+1
+    def inverse_shor_qft(self):
+        """
+        Appends the custom Inverse QFT (IQFT) gate to the precision register.
+        The IQFT gate is generated by taking the inverse of the QFT gate.
+        """
+        if self.precision_bits == 0:
+            return
             
-            # Step 3: Apply controlled phase rotations to all lesser significant bits
-            for jdx in reversed(range(self.working_bits - idx - 1)):
-                # Calculate phase angle
-                c_phase_angle = -np.pi / (2 ** (jdx + 1))
+        # 1. Create the forward QFT gate first
+        qft_gate = self._create_qft_gate()
 
-                # Apply controlled phase rotation
-                self.full_circuit.cp(c_phase_angle, self.working_bits-idx - 1, self.working_bits-idx - 2 - jdx)
-            
-            # Step 2: Apply Hadamard gate to the current bit
-            self.full_circuit.h(self.working_bits-idx - 1)
-            # Draw barrier after each qft stage
-            self.full_circuit.barrier(label=f'invQFT {i}')
+        # 2. Create the inverse gate from it
+        iqft_gate = qft_gate.inverse()
+        iqft_gate.label = "IQFT" # Rename the label for clarity
+        
+        # 3. Define the qubits for the gate
+        precision_qubits = range(self.working_bits, self.working_bits + self.precision_bits)
+
+        # 4. Append the gate to the circuit
+        self.full_circuit.append(iqft_gate, precision_qubits)
+        self.full_circuit.barrier(label='IQFT')
         pass
 
     # Overall Circuit
@@ -140,14 +188,28 @@ class ShorCircuit:
     # Circle Notation of final Statevector
     def shor_circle_viz(self):
         state_vec = Statevector(self.full_circuit)
-        QubitSystem(statevector=state_vec, label="Final state").viz_circle()
+        # QubitSystem(statevector=state_vec, label="Final state").viz_circle(max_cols=16)
+        QubitSystem(statevector=state_vec, label="Final state").viz_circle_with_mag(max_cols=8)   
+        pass
+    
+    # measure the precision register
+    def shor_precision_measure(self):
+        self.full_circuit.barrier(label='Meas')
+        self.full_circuit.measure(
+            range(self.working_bits, self.working_bits + self.precision_bits),
+            range(self.precision_bits)
+        )
         pass
 
 ## Testing ##
-f = ShorCircuit(2, 4, 2)
+f = ShorCircuit(2, 4, 4)
+f.modular_exponentiation()
 f.shor_qft()
-f.shor_inverse_qft()
-#f.shor_overall_circuit()
-f.shor_draw(scale=0.5)
-# f.shor_circle_viz()
+# f.shor_precision_measure()
+f.inverse_shor_qft()
 
+QubitSystem(Statevector(f.full_circuit)).viz_circle_with_mag(working_bits=f.working_bits, precision_bits=f.precision_bits)
+f_circuit = f.full_circuit.copy()
+f_circuit.save_statevector()
+f_sv = statevector_from_aer(f_circuit)
+QubitSystem(f_sv).viz_circle_with_mag(working_bits=f.working_bits, precision_bits=f.precision_bits)
