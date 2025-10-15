@@ -485,12 +485,15 @@ class ShorCircuit:
         pass
 
 ## Testing ##
-f = ShorCircuit(2, 4, 1)
-f.full_circuit.barrier(label='init')
-f.exponentiation()#N=15)
+f = ShorCircuit(2, 4, 4)
+f.modular_exponentiation()
+# f.inc_pow_2(6)
+# f.full_circuit.barrier(label='init')
 
-#f.controlled_geq_check(decrement_value='dec15', k=1)
-#f.shor_draw(scale=0.7)
-f.shor_circle_viz()
-#print(np.real(np.round(Statevector(f.full_circuit), 0)))
+# f.controlled_geq_check('dec35', 1)
+f.shor_qft()
+# f.shor_draw(scale=0.7)
+QubitSystem(Statevector(f.full_circuit)).viz_circle_with_mag(max_cols=10,precision_bits=4, working_bits=4, flag_bit=1)
 
+# f.shor_circle_viz(max_cols=16)
+# print(np.real(np.round(Statevector(f.full_circuit), 0)))
