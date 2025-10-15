@@ -247,9 +247,9 @@ class ShorCircuit:
         pass
 
     # >= N check, k times
-    def controlled_geq_check(self, N, k):
+    def controlled_geq_check(self, k):
         for i in range(k):
-            if N == 15:
+            if self.N == 15:
                 self.dec15()
             
                 self.full_circuit.cx(
@@ -259,7 +259,7 @@ class ShorCircuit:
                 self.full_circuit.barrier(label="C-NOT Flag")
                 self.cont_inc_15()
 
-            elif N == 21:
+            elif self.N == 21:
                 self.dec21()
                 self.full_circuit.cx(
                     control_qubit=self.working_bits-1, 
@@ -267,7 +267,7 @@ class ShorCircuit:
                     )
                 self.cont_inc_21()
 
-            elif N == 33:
+            elif self.N == 33:
                 self.dec33()
                 self.full_circuit.cx(
                     control_qubit=self.working_bits-1, 
@@ -275,7 +275,7 @@ class ShorCircuit:
                     )
                 self.cont_inc_33()
             
-            elif N == 35:
+            elif self.N == 35:
                 self.dec35()
                 self.full_circuit.cx(
                     control_qubit=self.working_bits-1, 
@@ -330,8 +330,8 @@ class ShorCircuit:
             self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
         pass
 
-    def modular_exponentiation(self, N):
-        if N == 15:  
+    def modular_exponentiation(self):
+        if self.N == 15:  
             # Step 1: Put precision register in full binary state
             [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
 
@@ -350,12 +350,12 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(N=N, k = 3)
-                if idx == 3: self.controlled_geq_check(N=N, k = 17)
+                if idx == 2: self.controlled_geq_check(k = 3)
+                if idx == 3: self.controlled_geq_check(k = 17)
 
                 
 
-        if N == 21:
+        if self.N == 21:
             # Step 1: Put precision register in full binary state
             [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
 
@@ -374,11 +374,11 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(N=N, k = 7)
-                if idx == 3: self.controlled_geq_check(N=N, k = 12)
+                if idx == 2: self.controlled_geq_check(k = 7)
+                if idx == 3: self.controlled_geq_check(k = 12)
                     
     
-        if N == 33:
+        if self.N == 33:
             # Step 1: Put precision register in full binary state
             [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
 
@@ -396,10 +396,10 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(N=N, k = 4)
-                if idx == 3: self.controlled_geq_check(N=N, k = 8)
+                if idx == 2: self.controlled_geq_check(k = 4)
+                if idx == 3: self.controlled_geq_check(k = 8)
 
-        if N == 35:
+        if self.N == 35:
             # Step 1: Put precision register in full binary state
             [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
 
@@ -418,8 +418,8 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(N=N, k = 4)
-                if idx == 3: self.controlled_geq_check(N=N, k = 8)
+                if idx == 2: self.controlled_geq_check(k = 4)
+                if idx == 3: self.controlled_geq_check(k = 8)
         pass
 
     # QFT
@@ -588,102 +588,5 @@ f.shor_precision_measure()
 f.shor_run_qc()
 f.shor_factors()
 # print(np.real(np.round(Statevector(f.full_circuit), 0)))
-# f.fu
-
 
 #%%
-
-# def shor_logic(N, repeat_period, coprime):
-#     """
-#     Given the repeat period, find the actual factors of N.
-#     """
-#     ar2 = coprime ** (repeat_period / 2.0)
-#     factor1 = gcd(N, int(ar2 - 1))
-#     factor2 = gcd(N, int(ar2 + 1))
-#     return factor1, factor2
-
-# qc = f.full_circuit.decompose()
-# # Transpile for simulator
-# simulator = AerSimulator()
-# circ = transpile(qc, simulator)
-
-# # Run and get counts
-# result = simulator.run(circ).result()
-# counts = result.get_counts(circ)
-# counts_int = {int(k, 2): v for k, v in counts.items()}
-# print (counts_int)
-
-# for state, num_counts in sorted(counts_int.items(), key=lambda item: item[1], reverse=True):
-#     # if state == 0, skip
-#     # print(state, num_counts)
-#     cands = estimate_num_spikes(state, 2**4) # self.a, self.precision_bits
-#     # print (state, cands)
-#     for cand in cands:
-#         factors = shor_logic(15, cand, 2) # self.N, self.a
-#         if factors[0] != 15 and factors[1] != 15 and factors[0] * factors[1] == 15: # self.N
-#             print (factors)
-#             # return once found.
-
-
-#%%
-
-# def estimate_num_spikes(spike, range_):
-#     # Mirror the JS behavior for spike < range/2
-#     if spike < range_ / 2:
-#         spike = range_ - spike
-
-#     best_error = 1.0
-#     e0, e1, e2 = 0, 0, 0
-#     actual = spike / range_
-#     candidates = []
-
-#     denom = 1.0
-#     while denom < spike:
-#         numerator = round(denom * actual)
-#         estimated = numerator / denom
-#         error = abs(estimated - actual)
-
-#         e0 = e1
-#         e1 = e2
-#         e2 = error
-
-#         # Local minimum check (same logic as the JS version)
-#         if e1 <= best_error and e1 < e0 and e1 < e2:
-#             repeat_period = denom - 1
-#             candidates.append(denom - 1)
-#             best_error = e1
-
-#         denom += 1.0
-
-#     return candidates
-
-# def shor_logic(N, repeat_period, coprime):
-#     """
-#     Given the repeat period, find the actual factors of N.
-#     """
-#     ar2 = coprime ** (repeat_period / 2.0)
-#     factor1 = gcd(N, int(ar2 - 1))
-#     factor2 = gcd(N, int(ar2 + 1))
-#     return factor1, factor2
-
-# qc = f.full_circuit.decompose()
-# # Transpile for simulator
-# simulator = AerSimulator()
-# circ = transpile(qc, simulator)
-
-# # Run and get counts
-# result = simulator.run(circ).result()
-# counts = result.get_counts(circ)
-# counts_int = {int(k, 2): v for k, v in counts.items()}
-# print (counts_int)
-
-# for state, num_counts in sorted(counts_int.items(), key=lambda item: item[1], reverse=True):
-#     # if state == 0, skip
-#     # print(state, num_counts)
-#     cands = estimate_num_spikes(state, 2**4) # self.a, self.precision_bits
-#     # print (state, cands)
-#     for cand in cands:
-#         factors = shor_logic(15, cand, 2) # self.N, self.a
-#         if factors[0] != 15 and factors[1] != 15 and factors[0] * factors[1] == 15: # self.N
-#             print (factors)
-#             # return once found.
