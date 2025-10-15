@@ -371,7 +371,7 @@ class ShorCircuit:
         pass
 
 ## Testing ##
-f = ShorCircuit(2, 7, 0)
+f = ShorCircuit(2, 7, 4)
 f.inc_pow_2(6)
 f.full_circuit.barrier(label='init')
 
@@ -379,5 +379,4 @@ f.controlled_geq_check('dec35', 1)
 f.shor_qft()
 f.shor_draw(scale=0.7)
 #f.shor_circle_viz()
-print(np.real(np.round(Statevector(f.full_circuit), 0)))
-
+# print(np.real(np.round(Statevector(f.full_circuit), 0)))
