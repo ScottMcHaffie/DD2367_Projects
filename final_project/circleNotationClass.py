@@ -94,9 +94,9 @@ class QubitSystem:
                 return f"|{bitstring}⟩"
             else:
                 # When using P/W labels, reverse_bits only applies to the precision part
-                precision_str = bitstring[:precision_bits-flag_bit]
-                working_str = bitstring[precision_bits:]
-                flag_str = bitstring[precision_bits-flag_bit:precision_bits]
+                flag_str = bitstring[0]
+                precision_str = bitstring[1:precision_bits+1]
+                working_str = bitstring[precision_bits+1:]
 
                 if reverse_bits:
                     precision_str = precision_str[::-1]
