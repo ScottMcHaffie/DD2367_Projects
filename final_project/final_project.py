@@ -239,10 +239,11 @@ class ShorCircuit:
         pass
 
     # >= N check, k times
-    def controlled_geq_check(self, decrement_value, k):
+    def controlled_geq_check(self, N, k):
         for i in range(k):
-            if decrement_value == 'dec15':
+            if N == 15:
                 self.dec15()
+            
                 self.full_circuit.cx(
                     control_qubit=self.working_bits- 1, 
                     target_qubit=self.flag_bit
@@ -250,7 +251,7 @@ class ShorCircuit:
                 self.full_circuit.barrier(label="C-NOT Flag")
                 self.cont_inc_15()
 
-            elif decrement_value == 'dec21':
+            elif N == 21:
                 self.dec21()
                 self.full_circuit.cx(
                     control_qubit=self.working_bits-1, 
@@ -258,7 +259,7 @@ class ShorCircuit:
                     )
                 self.cont_inc_21()
 
-            elif decrement_value == 'dec33':
+            elif N == 33:
                 self.dec33()
                 self.full_circuit.cx(
                     control_qubit=self.working_bits-1, 
@@ -266,7 +267,7 @@ class ShorCircuit:
                     )
                 self.cont_inc_33()
             
-            elif decrement_value == 'dec35':
+            elif N == 35:
                 self.dec35()
                 self.full_circuit.cx(
                     control_qubit=self.working_bits-1, 
@@ -314,11 +315,11 @@ class ShorCircuit:
 
         # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
         for idx in range(self.precision_bits):
-            for exp in range(idx+1):
+            for exp in range(2 ** idx):
                 self.controlled_multiplication_by_2(control_bit=idx)
 
             # Draw barrier after each modular exponentiation stage
-            self.full_circuit.barrier(label='ME 2^' + str(idx + 1))
+            self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
         pass
 
     def modular_exponentiation(self, N):
@@ -341,8 +342,8 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(decrement_value='dec15', k = 1)
-                if idx == 3: self.controlled_geq_check(decrement_value='dec15', k = 17)
+                if idx == 2: self.controlled_geq_check(N=N, k = 3)
+                if idx == 3: self.controlled_geq_check(N=N, k = 17)
 
                 
 
@@ -365,11 +366,10 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(decrement_value='dec21', k = 7)
-                if idx == 3: self.controlled_geq_check(decrement_value='dec21', k = 12)
+                if idx == 2: self.controlled_geq_check(N=N, k = 7)
+                if idx == 3: self.controlled_geq_check(N=N, k = 12)
                     
-                
-
+    
         if N == 33:
             # Step 1: Put precision register in full binary state
             [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
@@ -388,8 +388,8 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(decrement_value='dec21', k = 4)
-                if idx == 3: self.controlled_geq_check(decrement_value='dec21', k = 8)
+                if idx == 2: self.controlled_geq_check(N=N, k = 4)
+                if idx == 3: self.controlled_geq_check(N=N, k = 8)
 
         if N == 35:
             # Step 1: Put precision register in full binary state
@@ -410,8 +410,8 @@ class ShorCircuit:
                 self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
                 # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(decrement_value='dec21', k = 4)
-                if idx == 3: self.controlled_geq_check(decrement_value='dec21', k = 8)
+                if idx == 2: self.controlled_geq_check(N=N, k = 4)
+                if idx == 3: self.controlled_geq_check(N=N, k = 8)
         pass
 
     # QFT
@@ -463,16 +463,28 @@ class ShorCircuit:
 
     ## PLOTTING FUNCTIONS ##
     # Draw the full circuit    
-    def shor_draw(self, scale):
-        self.full_circuit.draw("mpl", initial_state=True, scale = 0.5)
+    def shor_draw(self, scale = 0.5):
+        self.full_circuit.draw("mpl", initial_state=True, scale = scale)
         plt.show()
         pass
 
     # Circle Notation of final Statevector
-    def shor_circle_viz(self):
+    def shor_circle_viz(self, output = 'binary'):
         state_vec = Statevector(self.full_circuit)
         # QubitSystem(statevector=state_vec, label="Final state").viz_circle(max_cols=16)
-        QubitSystem(statevector=state_vec, label="Final state").viz_circle_with_mag(max_cols=8, precision_bits=1)   
+        
+        if output == 'binary':
+            QubitSystem(statevector=state_vec, label="Final state").viz_circle_with_mag(
+                max_cols=8
+            )
+
+        if output == 'tp':
+            QubitSystem(statevector=state_vec, label="Final state").viz_circle_with_mag(
+                max_cols=4,
+                working_bits=self.working_bits,
+                precision_bits=self.precision_bits,
+                flag_bit=1
+                )      
         pass
     
     # measure the precision register
@@ -485,15 +497,26 @@ class ShorCircuit:
         pass
 
 ## Testing ##
-f = ShorCircuit(2, 4, 4)
-f.modular_exponentiation()
-# f.inc_pow_2(6)
-# f.full_circuit.barrier(label='init')
+f = ShorCircuit(2, 9, 3)
+N = 15
 
-# f.controlled_geq_check('dec35', 1)
-f.shor_qft()
-# f.shor_draw(scale=0.7)
-QubitSystem(Statevector(f.full_circuit)).viz_circle_with_mag(max_cols=10,precision_bits=4, working_bits=4, flag_bit=1)
+#f.exponentiation()
+f.modular_exponentiation(N=N)
+#f.controlled_geq_check(N=N, k=1)
+# f.dec15()
+# f.full_circuit.cx(control_qubit=f.working_bits - 1, target_qubit=f.flag_bit)
+# f.cont_inc_15()
+# f.full_circuit.x(f.working_bits - 1)
+# f.full_circuit.cx(
+#     control_qubit=f.working_bits - 1,
+#     target_qubit=f.flag_bit
+# )        
+# f.full_circuit.x(f.working_bits - 1)
 
-# f.shor_circle_viz(max_cols=16)
+#f.shor_qft()
+#f.shor_draw(scale=0.7)
+
+f.shor_circle_viz(output='tp')
 # print(np.real(np.round(Statevector(f.full_circuit), 0)))
+
+# %%
