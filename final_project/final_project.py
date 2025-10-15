@@ -62,6 +62,19 @@ class ShorCircuit:
         pass
     
     ## Helper Methods to Create Reusable Gates ##
+
+    # Controlled Multiplication by 2
+    def controlled_multiplication_by_2(self, control_bit: int):
+        for idx in range(self.working_bits-1):
+
+            # Controlled SWAP between qubits in working register, starting from MSB <--> MSB - 1 ... down to LSB <--> LSB + 1
+            self.full_circuit.cswap(
+                control_qubit=self.working_bits+control_bit, 
+                target_qubit1=self.working_bits - idx - 1, 
+                target_qubit2=self.working_bits - idx - 2
+                )
+        return 
+
     def _create_mod_exp_gate(self) -> 'Gate':
         n_p = self.precision_bits
         n_w = self.working_bits
@@ -80,8 +93,7 @@ class ShorCircuit:
                     target2 = n_w - swap_idx - 2
                     mod_exp_circ.cswap(control_qubit_local, target1, target2)
             
-        return mod_exp_circ.to_gate(label="ModExp")
-
+        pass
 
     def _create_qft_gate(self,inv: bool = False) -> 'Gate':
 
@@ -108,17 +120,6 @@ class ShorCircuit:
             qft_circ.swap(idx, n - 1 - idx)
         return qft_circ.to_gate(label="QFT")
     
-    # Controlled Multiplication by 2
-    def controlled_multiplication_by_2(self, control_bit: int):
-        for idx in range(self.working_bits-1):
-
-            # Controlled SWAP between qubits in working register, starting from MSB <--> MSB - 1 ... down to LSB <--> LSB + 1
-            self.full_circuit.cswap(
-                control_qubit=self.working_bits+control_bit, 
-                target_qubit1=self.working_bits - idx - 1, 
-                target_qubit2=self.working_bits - idx - 2
-                )
-        return 
 
     ## Subroutines Applied to the Main Circuit ##
     
@@ -286,7 +287,7 @@ class ShorCircuit:
         pass
     
     # Modular Exponentiation
-    def modular_exponentiation(self):
+    def modular_exponentiation_block(self):
 
         if self.precision_bits == 0 and self.working_bits == 0:
             return
@@ -299,6 +300,119 @@ class ShorCircuit:
         self.full_circuit.barrier(label='ModExp') # This barrier is fine
         pass
 
+
+    # Modular Exponentiation
+    def exponentiation(self):
+    
+        # Step 1: Put precision register in full binary state
+        [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+
+        # Step 2: Put LSB bit of working register in state |1>
+        self.full_circuit.x(0)
+        # Step 2.1: Barrier
+        self.full_circuit.barrier(label='ME Init')
+
+        # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
+        for idx in range(self.precision_bits):
+            for exp in range(idx+1):
+                self.controlled_multiplication_by_2(control_bit=idx)
+
+            # Draw barrier after each modular exponentiation stage
+            self.full_circuit.barrier(label='ME 2^' + str(idx + 1))
+        pass
+
+    def modular_exponentiation(self, N):
+        if N == 15:  
+            # Step 1: Put precision register in full binary state
+            [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+
+            # Step 2: Put LSB bit of working register in state |1>
+            self.full_circuit.x(0)
+
+            # Step 2.1: Barrier
+            self.full_circuit.barrier(label='ME Init')
+
+            # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
+            for idx in range(self.precision_bits):
+                for exp in range(2 ** idx):
+                    self.controlled_multiplication_by_2(control_bit=idx)
+
+                # Draw barrier after each modular exponentiation stage
+                self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
+
+                # Implement modulo computation
+                if idx == 2: self.controlled_geq_check(decrement_value='dec15', k = 1)
+                if idx == 3: self.controlled_geq_check(decrement_value='dec15', k = 17)
+
+                
+
+        if N == 21:
+            # Step 1: Put precision register in full binary state
+            [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+
+            # Step 2: Put LSB bit of working register in state |1>
+            self.full_circuit.x(0)
+
+            # Step 2.1: Barrier
+            self.full_circuit.barrier(label='ME Init')
+
+            # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
+            for idx in range(self.precision_bits):
+                for exp in range(2 ** idx):
+                    self.controlled_multiplication_by_2(control_bit=idx)
+
+                # Draw barrier after each modular exponentiation stage
+                self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
+
+                # Implement modulo computation
+                if idx == 2: self.controlled_geq_check(decrement_value='dec21', k = 7)
+                if idx == 3: self.controlled_geq_check(decrement_value='dec21', k = 12)
+                    
+                
+
+        if N == 33:
+            # Step 1: Put precision register in full binary state
+            [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+
+            # Step 2: Put LSB bit of working register in state |1>
+            self.full_circuit.x(0)
+
+            # Step 2.1: Barrier
+            self.full_circuit.barrier(label='ME Init')
+
+            # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
+            for idx in range(self.precision_bits):
+                for exp in range(2 ** idx):
+                    self.controlled_multiplication_by_2(control_bit=idx)
+                # Draw barrier after each modular exponentiation stage
+                self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
+
+                # Implement modulo computation
+                if idx == 2: self.controlled_geq_check(decrement_value='dec21', k = 4)
+                if idx == 3: self.controlled_geq_check(decrement_value='dec21', k = 8)
+
+        if N == 35:
+            # Step 1: Put precision register in full binary state
+            [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+
+            # Step 2: Put LSB bit of working register in state |1>
+            self.full_circuit.x(0)
+
+            # Step 2.1: Barrier
+            self.full_circuit.barrier(label='ME Init')
+
+            # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
+            for idx in range(self.precision_bits):
+                for exp in range(2 ** idx):
+                    self.controlled_multiplication_by_2(control_bit=idx)
+
+                # Draw barrier after each modular exponentiation stage
+                self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
+
+                # Implement modulo computation
+                if idx == 2: self.controlled_geq_check(decrement_value='dec21', k = 4)
+                if idx == 3: self.controlled_geq_check(decrement_value='dec21', k = 8)
+        pass
 
     # QFT
     def shor_qft(self):
@@ -358,7 +472,7 @@ class ShorCircuit:
     def shor_circle_viz(self):
         state_vec = Statevector(self.full_circuit)
         # QubitSystem(statevector=state_vec, label="Final state").viz_circle(max_cols=16)
-        QubitSystem(statevector=state_vec, label="Final state").viz_circle_with_mag(max_cols=8)   
+        QubitSystem(statevector=state_vec, label="Final state").viz_circle_with_mag(max_cols=8, precision_bits=1)   
         pass
     
     # measure the precision register
