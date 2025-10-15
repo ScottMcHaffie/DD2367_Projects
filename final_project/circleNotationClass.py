@@ -71,7 +71,7 @@ class QubitSystem:
         plt.tight_layout()
         plt.show()
         
-    def viz_circle_with_mag(self, max_cols: int = 8, figsize_scale: float = 2.3, tol: float = 1e-9, working_bits: int = 0, precision_bits: int = 0, reverse_bits: bool = False):
+    def viz_circle_with_mag(self, max_cols: int = 8, figsize_scale: float = 2.3, tol: float = 1e-9, working_bits: int = 0, precision_bits: int = 0, flag_bit:int = 0, reverse_bits: bool = False):
         use_new_labels = working_bits > 0 or precision_bits > 0
         if use_new_labels:
             if working_bits > 0 and precision_bits == 0:
@@ -79,9 +79,9 @@ class QubitSystem:
             elif precision_bits > 0 and working_bits == 0:
                 working_bits = self.n_qubits - precision_bits
 
-            if working_bits + precision_bits != self.n_qubits or working_bits < 0 or precision_bits < 0:
+            if working_bits + precision_bits + flag_bit != self.n_qubits or working_bits < 0 or precision_bits < 0:
                 raise ValueError(
-                    f"Sum of working ({working_bits}) and precision ({precision_bits}) bits "
+                    f"Sum of working ({working_bits}) and precision ({precision_bits}) bits and flag bit ({flag_bit}) "
                     f"must equal total qubits ({self.n_qubits}) and be non-negative."
                 )
 
@@ -94,15 +94,17 @@ class QubitSystem:
                 return f"|{bitstring}⟩"
             else:
                 # When using P/W labels, reverse_bits only applies to the precision part
-                precision_str = bitstring[:precision_bits]
+                precision_str = bitstring[:precision_bits-flag_bit]
                 working_str = bitstring[precision_bits:]
+                flag_str = bitstring[precision_bits-flag_bit:precision_bits]
 
                 if reverse_bits:
                     precision_str = precision_str[::-1]
 
                 precision_val = int(precision_str, 2) if precision_str else 0
                 working_val = int(working_str, 2) if working_str else 0
-                return f"P|{precision_val}⟩ W|{working_val}⟩"
+                flag_val = int(flag_str, 2) if flag_str else 0
+                return f"F|{flag_val}⟩ P|{precision_val}⟩ W|{working_val}⟩"
 
         mag_indices = np.where(self.prob > tol)[0]
 
