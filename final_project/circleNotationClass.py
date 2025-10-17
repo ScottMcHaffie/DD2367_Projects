@@ -71,19 +71,13 @@ class QubitSystem:
         plt.tight_layout()
         plt.show()
         
-    def viz_circle_with_mag(self, max_cols: int = 8, figsize_scale: float = 2.3, tol: float = 1e-9, working_bits: int = 0, precision_bits: int = 0, flag_bit:int = 0, reverse_bits: bool = False):
+    def viz_circle_with_mag(self, max_cols: int = 8, figsize_scale: float = 2.3, tol: float = 1e-9, working_bits: int = 0, precision_bits: int = 0,Dummy_A_bits : int =0,Cin_bits : int =1,B_bits : int = 0,Cout_bits :  int = 0,N_bits : int = 0,Flag_bits : int = 0 ,reverse_bits: bool = False):
         use_new_labels = working_bits > 0 or precision_bits > 0
         if use_new_labels:
             if working_bits > 0 and precision_bits == 0:
                 precision_bits = self.n_qubits - working_bits
             elif precision_bits > 0 and working_bits == 0:
                 working_bits = self.n_qubits - precision_bits
-
-            if working_bits + precision_bits + flag_bit != self.n_qubits or working_bits < 0 or precision_bits < 0:
-                raise ValueError(
-                    f"Sum of working ({working_bits}) and precision ({precision_bits}) bits and flag bit ({flag_bit}) "
-                    f"must equal total qubits ({self.n_qubits}) and be non-negative."
-                )
 
         def get_title(state_idx):
             bitstring = format(state_idx, f'0{self.n_qubits}b')
@@ -94,17 +88,29 @@ class QubitSystem:
                 return f"|{bitstring}⟩"
             else:
                 # When using P/W labels, reverse_bits only applies to the precision part
-                flag_str = bitstring[0]
-                precision_str = bitstring[1:precision_bits+1]
-                working_str = bitstring[precision_bits+1:]
+                Flag_str = bitstring[0:Flag_bits]
+                N_str = bitstring[Flag_bits:N_bits+Flag_bits]
+                Cout_str= bitstring[N_bits+Flag_bits:Cout_bits+N_bits+Flag_bits]
+                B_str = bitstring[Cout_bits+N_bits+Flag_bits:Cout_bits+N_bits+Flag_bits+B_bits]
+                Cin_str = bitstring[Cout_bits+N_bits+Flag_bits+B_bits:Cout_bits+N_bits+Flag_bits+B_bits+Cin_bits]
+                Dummy_A_str = bitstring[Cout_bits+N_bits+Flag_bits+B_bits+Cin_bits:Cout_bits+N_bits+Flag_bits+B_bits+Cin_bits+Dummy_A_bits]
+                precision_str = bitstring[Cout_bits+N_bits+Flag_bits+B_bits+Cin_bits+Dummy_A_bits:Cout_bits+N_bits+Flag_bits+B_bits+Cin_bits+Dummy_A_bits+precision_bits]
+                working_str = bitstring[-working_bits:]
+
 
                 if reverse_bits:
                     precision_str = precision_str[::-1]
 
+                flag_val = int(Flag_str, 2) if Flag_str else 0
+                N_val = int(N_str, 2) if N_str else 0
+                Cout_val = int(Cout_str, 2) if Cout_str else 0
+                B_val = int(B_str, 2) if B_str else 0
+                Cin_val = int(Cin_str,2) if Cin_str else 0
+                Dummy_A_val = int(Dummy_A_str, 2) if Dummy_A_str else 0
                 precision_val = int(precision_str, 2) if precision_str else 0
                 working_val = int(working_str, 2) if working_str else 0
-                flag_val = int(flag_str, 2) if flag_str else 0
-                return f"F|{flag_val}⟩ P|{precision_val}⟩ W|{working_val}⟩"
+
+                return f"F|{flag_val}⟩ N|{N_val}⟩ Cout|{Cout_val}⟩ B|{B_val}⟩ Cin|{Cin_val}⟩ DA|{Dummy_A_val}⟩ P|{precision_val}⟩ W|{working_val}⟩"
 
         mag_indices = np.where(self.prob > tol)[0]
 
