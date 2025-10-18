@@ -43,14 +43,10 @@ class ShorCircuit:
         self.N = N
         self.working_bits = working_bits
         self.precision_bits = precision_bits
-        self.dummy_A_bits =self.working_bits
         self.B_bits = self.working_bits
         self.carry_bits = 2
         self.N_bits = self.working_bits
-        # Position of Top Bit = Total number of bits - 1
-        self.flag_bit = self.N_bits + self.carry_bits + self.B_bits + self.dummy_A_bits + self.precision_bits + self.working_bits
-
-
+        
         ## Circuit initialisation ##
         # Working Register: Quantum + Classical
         self.working_register = QuantumCircuit(
@@ -62,12 +58,6 @@ class ShorCircuit:
             QuantumRegister(self.precision_bits, name='P'),
             ClassicalRegister(self.precision_bits, name='Readout'), 
             name="Precision Register")
-
-        # Dummy register for multiplication: Quantum Only
-        self.dummy_A_register = QuantumCircuit(
-            QuantumRegister(self.working_bits, name='DA'),
-            name="Dummy A Register"
-            )
 
         # C_in register
         self.c_in_register = QuantumCircuit(
@@ -93,118 +83,81 @@ class ShorCircuit:
             name="N Register"
         )
 
-
-
         # Flag Register: Quantum Only
         self.flag_register = QuantumCircuit(
             QuantumRegister(1, name='T'), 
             name="Flag Register"
         )
 
-
-        # Full Circuit: Working + Precision
+        # Full Circuit: Combine all registers
         self.full_circuit = QuantumCircuit(name='Full Circuit')
         self.full_circuit = self.flag_register.tensor(self.N_register)
         self.full_circuit = self.full_circuit.tensor(self.c_out_register)
         self.full_circuit = self.full_circuit.tensor(self.B_register)
         self.full_circuit = self.full_circuit.tensor(self.c_in_register)
-        self.full_circuit = self.full_circuit.tensor(self.dummy_A_register)
         self.full_circuit = self.full_circuit.tensor(self.precision_register)
         self.full_circuit = self.full_circuit.tensor(self.working_register)
         self.full_circuit.barrier()
-        pass
-
-        # Set register indices for passing to full adder function
-        self.working_indices = list(np.arange(self.working_bits))
-
-        self.dummy_A_indices = list(self.working_bits +
-                                     self.precision_bits + 
-                                     np.array(self.working_indices)
-                                     )
         
-        self.c_in_index = self.working_bits + self.precision_bits + self.dummy_A_bits
-        self.b_indices = list(self.c_in_index + 1 +  np.arange(self.B_bits))
-        self.c_out_index = + self.c_in_index + 1 + self.B_bits
+        # Set register indices for passing to gates
+        self.working_indices = list(np.arange(self.working_bits))
+        self.precision_indices = list(self.working_bits + np.arange(self.precision_bits))
+        
+        self.c_in_index = self.working_bits + self.precision_bits
+        self.b_indices = list(self.c_in_index + 1 + np.arange(self.B_bits))
+        self.c_out_index = self.c_in_index + 1 + self.B_bits
+        self.n_indices = list(self.c_out_index + 1 + np.arange(self.N_bits))
+        self.flag_bit = self.c_out_index + 1 + self.N_bits
+        pass
 
     ## ------ ADDER SUBROUTINES --------- ##
 
     # N_register set to |N>
-    def set_N_register(self, controlled_reset = False):
-        if self.N == 15 and controlled_reset == False:
-            indices = self.c_out_index + 1 + np.arange(4)
-            self.full_circuit.x(list(indices))
-        
-        if self.N == 15 and controlled_reset == True:
-            indices = self.dummy_A_indices[0] + np.arange(4)
-            self.full_circuit.cx(
-                control_qubit=self.flag_bit,
-                target_qubit=list(indices)
-                )
+    def set_N_register(self, controlled_reset=False):
 
-        if self.N == 21 and controlled_reset == False:
-            indices = self.c_out_index + 1 + np.array([0, 2, 4])
-            self.full_circuit.x(list(indices))
+        binary_str = bin(self.N)[2:]
+        powers = [len(binary_str) - 1 - i for i, bit in enumerate(binary_str) if bit == '1']
+        powers_array = np.array(powers)
 
-        if self.N == 21 and controlled_reset == True:
-            indices = self.dummy_A_indices[0] + np.array([0, 2, 4])
-            self.full_circuit.cx(
-                control_qubit=self.flag_bit,
-                target_qubit=list(indices)
-                )
-
-        if self.N == 33 and controlled_reset == False:
-            indices = self.c_out_index + 1 + np.array([0, 5])
-            self.full_circuit.x(list(indices))
-
-        if self.N == 33 and controlled_reset == True:
-            indices = self.dummy_A_indices[0] + np.array([0, 5])
-            self.full_circuit.cx(
-                control_qubit=self.flag_bit,
-                target_qubit=list(indices)
-                )
-
-        if self.N == 35 and controlled_reset == False:
-            indices = self.c_out_index + 1 + np.array([0, 1, 5])
-            self.full_circuit.x(list(indices))
-        
-        if self.N == 35 and controlled_reset == True:
-            indices = self.dummy_A_indices[0] + np.array([0, 1, 5])
-            self.full_circuit.cx(
-                control_qubit=self.flag_bit,
-                target_qubit=list(indices)
-                )
+        if controlled_reset:
+            base_index = self.working_indices[0]
+            target_indices = list(base_index + powers_array)
+            self.full_circuit.cx(control_qubit=self.flag_bit, target_qubit=target_indices)
+        else:
+            base_index = self.c_out_index + 1
+            target_indices = list(base_index + powers_array)
+            self.full_circuit.x(target_indices)
         pass
 
     # Adder modulo N
-
     def add_mod_N(self):
         '''
-        a = working 
-        b = 0 
-        N = number to be factorized
+        Computes (a + b) mod N.
+        Input: |a> in working_register, |b> in B_register
+        Output: |a> in working_register, |(a+b) mod N> in B_register
         '''
 
-        # Step 1: ADDER : a, b --> a, a + b : a = dummy, b = B
+        # Step 1: ADDER : a, b --> a, a + b
         self.full_circuit.append(
             FullAdderGate(num_state_qubits=self.N_bits),
             [self.c_in_index] + 
-            self.dummy_A_indices + 
+            self.working_indices + 
             self.b_indices + 
             [self.c_out_index]
             )
         
         # Step 2: Bitwise SWAP a <--> N
-        for idx in range(self.dummy_A_bits):
+        for idx in range(self.working_bits):
             self.full_circuit.swap(
-                qubit1 = self.dummy_A_indices[idx],
+                qubit1 = self.working_indices[idx],
                 qubit2 = idx + self.c_out_index + 1
             )
     
-        # Step 3: SUBTRACTER : a, b --> a, b - a: a = N, b = a + b
+        # Step 3: SUBTRACTER : N, a+b --> N, a+b-N
         self.full_circuit.append(
             FullAdderGate(num_state_qubits=self.N_bits).inverse(),
             [self.c_in_index] + 
-            self.dummy_A_indices + 
+            self.working_indices + 
             self.b_indices + 
             [self.c_out_index]
             )
@@ -220,30 +173,33 @@ class ShorCircuit:
         # Step 5: Controlled RESET : Control: Flag, Target : Register a
         self.set_N_register(controlled_reset=True)
 
-        # Step 6: ADDER : a, b --> a, a + b : a = 0 (or) N, b = a + b - N
+        # Step 6: ADDER : N, a+b-N --> N, a+b
         self.full_circuit.append(
             FullAdderGate(num_state_qubits=self.N_bits),
             [self.c_in_index] + 
-            self.dummy_A_indices + 
+            self.working_indices + 
             self.b_indices + 
             [self.c_out_index]
             )
 
         # Step 7: Controlled RESET : Control: Flag, Target : Register a
         self.set_N_register(controlled_reset=True)
+        
+        self.full_circuit.barrier()
 
         # Step 8: Bitwise SWAP a <--> N
-        for idx in range(self.dummy_A_bits):
+        for idx in range(self.working_bits):
             self.full_circuit.swap(
-                qubit1 = self.dummy_A_indices[idx],
+                qubit1 = self.working_indices[idx],
                 qubit2 = idx + self.c_out_index + 1
             )
+        # self.full_circuit.barrier()
 
-        # Step 9: SUBTRACTER : a, b --> a, a + b : a = 0 (or) N, b = a + b - N (or) a + b 
+        # Step 9: SUBTRACTER : a, b --> a, b-a
         self.full_circuit.append(
             FullAdderGate(num_state_qubits=self.N_bits).inverse(),
             [self.c_in_index] + 
-            self.dummy_A_indices + 
+            self.working_indices + 
             self.b_indices + 
             [self.c_out_index]
             )
@@ -254,11 +210,11 @@ class ShorCircuit:
             target_qubit=self.flag_bit
         )
 
-        # Step 11: ADDER : a, b --> a, a + b : a = a, b = a + b mod N (a + b or a + b - N)
+        # Step 11: ADDER : a, b-a --> a, b
         self.full_circuit.append(
             FullAdderGate(num_state_qubits=self.N_bits),
             [self.c_in_index] + 
-            self.dummy_A_indices + 
+            self.working_indices + 
             self.b_indices + 
             [self.c_out_index]
             )
@@ -275,40 +231,10 @@ class ShorCircuit:
                 )
         return 
     
-    # Controlled Working --> Dummy RESET
-    def cont_X_reset(self, pow_2_idx):
-        self.full_circuit.cx(
-            control_qubit=pow_2_idx,
-            target_qubit=self.dummy_A_indices[0] + pow_2_idx
-        )
-        pass
-
-    # Multiplication mod N
-    def multiplication_mod_N(self):
-        # Step 1: RESET Dummy to 2^0
-        self.cont_X_reset(pow_2_idx=0)
-
-        # Step 2: ADDER 
-        self.add_mod_N()
-        self.full_circuit.barrier()
-
-        # Step 3: Loop over remaining x-bit values
-        for idx in range(self.working_bits-1):
-            self.cont_X_reset(pow_2_idx = idx)
-            self.cont_X_reset(pow_2_idx = idx+1)    
-            self.add_mod_N()
-            self.full_circuit.barrier()
-                
-        # Step 4: final RESET MSB of dummy register
-        self.cont_X_reset(pow_2_idx=self.working_bits-1)
-
     ## ---------------- Helper Methods to Create Reusable Gates ------------- ##
 
-    
     # QFT module gate
-
-    def _create_qft_gate(self,inv: bool = False) -> 'Gate':
-
+    def _create_qft_gate(self,inv: bool = False) -> 'Gate': #type: ignore
         n = self.precision_bits
         qft_circ = QuantumCircuit(n, name="QFT")
 
@@ -334,10 +260,7 @@ class ShorCircuit:
 
     ## -------------- Subroutines Applied to the Main Circuit --------------- ##
     
-    ## Increment/Decrement Operators ##
-
     # Increment by 2^M :
-
     def inc_pow_2(self, power_of_two):
         for idx in range(self.working_bits - power_of_two):
             if idx == self.working_bits - power_of_two - 1:
@@ -405,61 +328,37 @@ class ShorCircuit:
                     )
         pass
 
-    # Modulo controlled Decrement 15 : 
-    def cont_dec15(self):
-        self.cont_dec_pow_2(power_of_two=3)
-        self.cont_dec_pow_2(power_of_two=2)
-        self.cont_dec_pow_2(power_of_two=1)
-        self.cont_dec_pow_2(power_of_two=0)
-        pass
-    
-    # Flag controlled Increment 15:
-    def cont_inc15(self):
-        self.cont_inc_pow_2(power_of_two=0)
-        self.cont_inc_pow_2(power_of_two=1)
-        self.cont_inc_pow_2(power_of_two=2)
-        self.cont_inc_pow_2(power_of_two=3)
-        pass
+    # General Controlled Operation (Increment/Decrement) based on binary representation
+    def controlled_operation(self, number, operation_type):
 
-    # Modulo controlled Decrement 21 : 
-    def cont_dec21(self):
-        self.cont_dec_pow_2(power_of_two=4)
-        self.cont_dec_pow_2(power_of_two=2)
-        self.cont_dec_pow_2(power_of_two=0)
-        pass
+        if not isinstance(number, int) or number < 0:
+            raise ValueError("Input 'number' must be a non-negative integer.")
 
-    # Flag controlled Increment 21:
-    def cont_inc21(self):
-        self.cont_inc_pow_2(power_of_two=0)
-        self.cont_inc_pow_2(power_of_two=2)
-        self.cont_inc_pow_2(power_of_two=4)
-        pass
+        # Determine the correct method and order of operations
+        if operation_type == 'increment':
+            target_method = self.cont_inc_pow_2
+            reverse_order = True
+        elif operation_type == 'decrement':
+            target_method = self.cont_dec_pow_2
+            reverse_order = False
+        else:
+            raise ValueError("operation_type must be 'increment' or 'decrement'")
+
+        # Get the binary representation of the number
+        binary_str = bin(number)[2:]
+
+        # Find the powers of two corresponding to the '1's in the binary string
+        powers = [
+            len(binary_str) - 1 - i
+            for i, bit in enumerate(binary_str)
+            if bit == '1'
+        ]
         
-    # Modulo controlled Decrement 33 : 
-    def cont_dec33(self):
-        self.cont_dec_pow_2(power_of_two=5)
-        self.cont_dec_pow_2(power_of_two=0)
-        pass
+        if reverse_order:
+            powers.reverse()
 
-    # Flag controlled Increment 33:
-    def cont_inc33(self):
-        self.cont_inc_pow_2(power_of_two=0)
-        self.cont_inc_pow_2(power_of_two=5)
-        pass
-
-    # Modulo controlled Deccrement 35 : 
-    def cont_dec35(self):
-        self.cont_dec_pow_2(power_of_two=5)
-        self.cont_dec_pow_2(power_of_two=1)
-        self.cont_dec_pow_2(power_of_two=0)
-        pass
-
-    # Flag controlled Increment 35:
-    def cont_inc35(self):
-        self.cont_inc_pow_2(power_of_two=0)
-        self.cont_inc_pow_2(power_of_two=1)
-        self.cont_inc_pow_2(power_of_two=5)
-        pass
+        for p in powers:
+            target_method(power_of_two=p)
 
     # >= N check, k times
     def controlled_geq_check(self, k):
@@ -469,10 +368,7 @@ class ShorCircuit:
         # Step 2: Repeated controlled decrement and increments
         for i in range(k):
             # Decrement
-            if self.N == 15: self.cont_dec15()
-            if self.N == 21: self.cont_dec21()
-            if self.N == 33: self.cont_dec33()
-            if self.N == 35: self.cont_dec35()
+            self.controlled_operation(self, self.N, 'decrement')
             self.full_circuit.x(self.modulo_bit)
 
             # -ve check
@@ -486,11 +382,7 @@ class ShorCircuit:
                 )
             
             # increment
-            if self.N == 15: self.cont_inc15()
-            if self.N == 21: self.cont_inc21()
-            if self.N == 33: self.cont_inc33()
-            if self.N == 35: self.cont_inc35()
-            
+            self.controlled_operation(self, self.N, 'increment')
             # Reverse flag and modulo qubits back to initial state
             self.full_circuit.cx(
                 control_qubit=self.modulo_bit,
@@ -536,24 +428,29 @@ class ShorCircuit:
             self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
         pass
 
+    # Modular Exponentiation with modulo checks
     def modular_exponentiation(self):
-        if self.N == 15:  
-            # Step 1: Put precision register in full binary state
-            [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+        # Dictionary to store the specific modulo parameters that differ for each N
+        modulo_params = {
+            21: {2: 7, 3: 12},
+            33: {2: 4, 3: 8},
+            35: {2: 4, 3: 8}
+            # N=15 has no special checks, so it is not included
+        }
+        # Step 1: Put precision register in superposition
+        [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
 
-            # Step 2: Put LSB bit of working register in state |1>
-            self.full_circuit.x(0)
-
-            # Step 2.1: Barrier
-            self.full_circuit.barrier(label='ME Init')
+        # Step 2: Set working register to state |1>
+        self.full_circuit.x(0)
+        self.full_circuit.barrier(label='ME Init')
 
             # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
-            for idx in range(self.precision_bits):
-                for exp in range(2 ** idx):
-                    self.controlled_multiplication_by_2(control_bit=idx)
-                    
-                # Draw barrier after each modular exponentiation stage
-                self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
+        for idx in range(self.precision_bits):
+            for exp in range(2 ** idx):
+                self.controlled_multiplication_by_2(control_bit=idx)
+                
+            # Draw barrier after each modular exponentiation stage
+            self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
 
 
         if self.N == 21:
@@ -607,25 +504,12 @@ class ShorCircuit:
             # Step 2: Put LSB bit of working register in state |1>
             self.full_circuit.x(0)
 
-            # Step 2.1: Barrier
-            self.full_circuit.barrier(label='ME Init')
-
-            # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
-            for idx in range(self.precision_bits):
-                for exp in range(2 ** idx):
-                    self.controlled_multiplication_by_2(control_bit=idx)
-
-                # Draw barrier after each modular exponentiation stage
-                self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
-
-                # Implement modulo computation
-                if idx == 2: self.controlled_geq_check(k = 4)
-                if idx == 3: self.controlled_geq_check(k = 8)
+            # Barrier for visualization after each stage
+            self.full_circuit.barrier(label=f'ME Stage idx={idx}')
         pass
-
+    
     # QFT
     def shor_qft(self):
-
         if self.precision_bits == 0:
             return
             
@@ -642,10 +526,7 @@ class ShorCircuit:
 
     # Inverse QFT
     def inverse_shor_qft(self):
-        """
-        Appends the custom Inverse QFT (IQFT) gate to the precision register.
-        The IQFT gate is generated by taking the inverse of the QFT gate.
-        """
+
         if self.precision_bits == 0:
             return
             
@@ -671,16 +552,15 @@ class ShorCircuit:
         pass
 
     ## PLOTTING FUNCTIONS ##
-    # Draw the full circuit    
-    def shor_draw(self, scale = 0.5):
-        self.full_circuit.draw("mpl", initial_state=True, scale = scale)
+    # Draw the full circuit     
+    def shor_draw(self, scale = 0.5, s_fold=25):
+        self.full_circuit.draw("mpl", initial_state=True, scale = scale, fold=s_fold)
         plt.show()
         pass
 
     # Circle Notation of final Statevector
     def shor_circle_viz(self, output = 'binary', cols=16):
         state_vec = Statevector(self.full_circuit)
-        # QubitSystem(statevector=state_vec, label="Final state").viz_circle(max_cols=16)
         
         if output == 'binary':
             QubitSystem(statevector=state_vec, label="Final state").viz_circle_with_mag(
@@ -692,14 +572,15 @@ class ShorCircuit:
                 max_cols=cols,
                 working_bits=self.working_bits,
                 precision_bits=self.precision_bits,
-                Dummy_A_bits=self.dummy_A_bits,
                 Cin_bits=1,
                 B_bits = self.B_bits,
                 Cout_bits = 1,
                 N_bits =self.N_bits,
                 Flag_bits = 1
-                )      
+                )           
         pass
+    
+    ## Measurement and Classical Part ##
     
     # measure the precision register
     def shor_precision_measure(self):
@@ -720,14 +601,15 @@ class ShorCircuit:
         circ = transpile(qc, simulator)
 
         # Run and get counts
-        result = simulator.run(circ).result()
+        result = simulator.run(circ, shots=2_048).result()
         counts = result.get_counts(circ)
         counts_int_states = {int(k, 2): v for k, v in counts.items()}
 
         # store in class object and return the list of counds based on state
         self.counts_int_states = counts_int_states
         return counts_int_states
-
+    
+    # Estimate repeat period from spike
     def shor_estimate_num_spikes(self, spike):
         range_ = self.base**self.precision_bits
         # Mirror the JS behavior for spike < range/2
@@ -752,7 +634,7 @@ class ShorCircuit:
             # Local minimum check (same logic as the JS version)
             if e1 <= best_error and e1 < e0 and e1 < e2:
                 repeat_period = denom - 1
-                candidates.append(denom - 1)
+                candidates.append(repeat_period)
                 best_error = e1
 
             denom += 1.0
@@ -781,17 +663,23 @@ class ShorCircuit:
 
 ## Testing ##
 a = 2; N = 15
-f = ShorCircuit(a, N, 5, 3)
-#f.full_circuit.x([4])
-#f.full_circuit.x(f.b_indices[4])
-# print (f.working_bits)
-f.exponentiation()
-f.multiplication_mod_N()
+f = ShorCircuit(a, N, 6, 3)
+
+# f.shor_qft()
+
+# f.exponentiation()
+# f.shor_qft()
+# f.shor_precision_measure()
+# f.shor_run_qc()
+# f.shor_factors()
+
+f.set_N_register()
+f.add_mod_N()
 #f.set_N_register()
 #f.shor_qft()
 
-#f.shor_draw(scale=0.7)
-f.shor_circle_viz(cols=1, output='tp')
+f.shor_draw(scale=0.7, s_fold=75)
+# f.shor_circle_viz(cols=1, output='tp')
 
 
 
