@@ -4,6 +4,7 @@
 import matplotlib
 # matplotlib.use('module://matplotlib_inline.backend_inline')
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 import circleNotationClass
 from qiskit import QuantumCircuit, transpile
@@ -216,7 +217,7 @@ class ShorCircuit:
         circ = transpile(qc, simulator)
 
         # Run and get counts
-        result = simulator.run(circ).result()
+        result = simulator.run(circ, shots=2048).result()
         counts = result.get_counts(circ)
         counts_int_states = {int(k, 2): v for k, v in counts.items()}
 
@@ -248,7 +249,7 @@ class ShorCircuit:
             # Local minimum check (same logic as the JS version)
             if e1 <= best_error and e1 < e0 and e1 < e2:
                 repeat_period = denom - 1
-                candidates.append(denom - 1)
+                candidates.append(repeat_period)
                 best_error = e1
 
             denom += 1.0
@@ -259,8 +260,7 @@ class ShorCircuit:
         """
         Given the repeat period, find the actual factors of N.
         """
-
-        ar2 = self.base ** (repeat_period / 2.0)
+        ar2 = math.pow(self.base, (repeat_period / 2.0))
         factor1 = gcd(self.N, int(ar2 - 1))
         factor2 = gcd(self.N, int(ar2 + 1))
         return factor1, factor2
@@ -270,24 +270,32 @@ class ShorCircuit:
             possible_periods = self.shor_estimate_num_spikes(state)
             for possible_period in possible_periods:
                 factors = self.shor_logic(possible_period)
-                if factors[0] != self.N and factors[1] != self.N and factors[0] * factors[1] == self.N: # self.N
-                    print (factors)
 
+                if factors[0] != self.N and factors[1] != self.N and factors[0] * factors[1] == self.N: # self.N
+                    print('Prime factors of ', self.N, ": ", factors)
+                    return 
+                
+
+                
 
 
 ## Testing ##
-a = 2; N = 21
-f = ShorCircuit(a, N, 5, 4)
+a = 2; N = 81
+f = ShorCircuit(a, N, 7, 6)
 
+# Circuit
 f.shor_overall_circuit()
-#f.shor_qft()
 
-#print(Statevector(f.full_circuit))
-f.shor_draw(scale=0.7)
-#f.shor_circle_viz(cols=4, output='tp')
-#f.shor_precision_measure()
-#f.shor_run_qc()
-#f.shor_factors()
+# Measurement
+f.shor_precision_measure()
+
+# Spike analysis
+f.shor_run_qc()
+
+# Get factors
+f.shor_factors()
+
+#f.shor_draw(scale=0.7)
 
 
 #%%
