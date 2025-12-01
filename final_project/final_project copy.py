@@ -47,6 +47,8 @@ class ShorCircuit:
         self.carry_bits = 2
         self.N_bits = self.working_bits
         
+        self.total_bits = self.working_bits*3 + self.precision_bits + self.carry_bits + 1
+        
         ## Circuit initialisation ##
         # Working Register: Quantum + Classical
         self.working_register = QuantumCircuit(
@@ -56,7 +58,7 @@ class ShorCircuit:
         # Precision Register: Quantum only
         self.precision_register = QuantumCircuit(
             QuantumRegister(self.precision_bits, name='P'),
-            ClassicalRegister(self.precision_bits, name='Readout'), 
+            # ClassicalRegister(self.precision_bits, name='Readout'), 
             name="Precision Register")
 
         # C_in register
@@ -89,26 +91,29 @@ class ShorCircuit:
             name="Flag Register"
         )
 
-        # Full Circuit: Combine all registers
         self.full_circuit = QuantumCircuit(name='Full Circuit')
-        self.full_circuit = self.flag_register.tensor(self.N_register)
+        self.full_circuit = self.flag_register                     # 0
+        # self.full_circuit = self.full_circuit.tensor(self.flag_register)
+        self.full_circuit = self.full_circuit.tensor(self.N_register)
         self.full_circuit = self.full_circuit.tensor(self.c_out_register)
         self.full_circuit = self.full_circuit.tensor(self.B_register)
-        self.full_circuit = self.full_circuit.tensor(self.c_in_register)
         self.full_circuit = self.full_circuit.tensor(self.precision_register)
         self.full_circuit = self.full_circuit.tensor(self.working_register)
-        self.full_circuit.barrier()
-        
+        self.full_circuit = self.full_circuit.tensor(self.c_in_register)
+        # self.full_circuit.barrier()
+
+        # Now update the index mapping:
         # Set register indices for passing to gates
-        self.working_indices = list(np.arange(self.working_bits))
-        self.precision_indices = list(self.working_bits + np.arange(self.precision_bits))
-        
-        self.c_in_index = self.working_bits + self.precision_bits
-        self.b_indices = list(self.c_in_index + 1 + np.arange(self.B_bits))
-        self.c_out_index = self.c_in_index + 1 + self.B_bits
-        self.n_indices = list(self.c_out_index + 1 + np.arange(self.N_bits))
-        self.flag_bit = self.c_out_index + 1 + self.N_bits
+        self.c_in_index = 0
+        self.working_indices = list(1 + np.arange(self.working_bits)) 
+        self.precision_indices = list(1 + self.working_bits + np.arange(self.precision_bits)) 
+        # self.c_in_index = self.working_bits + self.precision_bits 
+        self.b_indices = list(self.precision_indices[-1] + 1 + np.arange(self.B_bits)) 
+        self.c_out_index = self.precision_indices[-1] + 1 + self.B_bits 
+        self.n_indices = list(self.c_out_index + 1 + np.arange(self.N_bits)) 
+        self.flag_bit = self.c_out_index + 1 + self.N_bits 
         pass
+
 
     ## ------ ADDER SUBROUTINES --------- ##
 
@@ -136,7 +141,7 @@ class ShorCircuit:
         Input: |a> in working_register, |b> in B_register
         Output: |a> in working_register, |(a+b) mod N> in B_register
         '''
-
+        self.set_N_register()
         # Step 1: ADDER : a, b --> a, a + b
         self.full_circuit.append(
             FullAdderGate(num_state_qubits=self.N_bits),
@@ -185,7 +190,7 @@ class ShorCircuit:
         # Step 7: Controlled RESET : Control: Flag, Target : Register a
         self.set_N_register(controlled_reset=True)
         
-        self.full_circuit.barrier()
+        # self.full_circuit.barrier()
 
         # Step 8: Bitwise SWAP a <--> N
         for idx in range(self.working_bits):
@@ -218,6 +223,9 @@ class ShorCircuit:
             self.b_indices + 
             [self.c_out_index]
             )
+        
+
+        
 
     # Controlled Multiplication by 2
     def controlled_multiplication_by_2(self, control_bit: int):
@@ -226,8 +234,8 @@ class ShorCircuit:
             # Controlled SWAP between qubits in working register, starting from MSB <--> MSB - 1 ... down to LSB <--> LSB + 1
             self.full_circuit.cswap(
                 control_qubit=self.working_bits+control_bit, 
-                target_qubit1=self.working_bits - idx - 1, 
-                target_qubit2=self.working_bits - idx - 2
+                target_qubit1=self.working_bits - idx - 0, 
+                target_qubit2=self.working_bits - idx - 1
                 )
         return 
     
@@ -412,21 +420,22 @@ class ShorCircuit:
     def exponentiation(self):
     
         # Step 1: Put precision register in full binary state
-        [self.full_circuit.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+        [self.full_circuit.h(self.working_bits + idx + 1) for idx in range(self.precision_bits)]
 
         # Step 2: Put LSB bit of working register in state |1>
-        self.full_circuit.x(0)
+        self.full_circuit.x(1)
         # Step 2.1: Barrier
         self.full_circuit.barrier(label='ME Init')
 
         # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
         for idx in range(self.precision_bits):
             for exp in range(2 ** idx):
-                self.controlled_multiplication_by_2(control_bit=idx)
+                self.controlled_multiplication_by_2(control_bit=idx+1)
 
             # Draw barrier after each modular exponentiation stage
             self.full_circuit.barrier(label='ME 2^' + str(2 ** idx))
         pass
+
 
     # Modular Exponentiation with modulo checks
     def modular_exponentiation(self):
@@ -660,25 +669,78 @@ class ShorCircuit:
                     print (factors)
 
 
+    # # Controlled Multiplication by 2
+    # def controlled_multiplication_by_2(self, control_bit: int):
+    #     for idx in range(self.working_bits-1):
+
+    #         # Controlled SWAP between qubits in working register, starting from MSB <--> MSB - 1 ... down to LSB <--> LSB + 1
+    #         self.mod_exp_circ.cswap(
+    #             control_qubit=self.working_bits+control_bit, 
+    #             target_qubit1=self.working_bits - idx - 1, 
+    #             target_qubit2=self.working_bits - idx - 2
+    #             )
+    #     all_qubits = range(self.working_bits + self.precision_bits)
+    #     return self.full_circuit.append(self.mod_exp_circ.to_gate(),all_qubits)
+    
+    # # Modular Exponentiation
+    # def exponentiation(self):
+    #     n_p = self.precision_bits
+    #     n_w = self.working_bits
+        
+    #     self.mod_exp_circ = QuantumCircuit(n_p + n_w, name="ModExp")
+    #     # Step 1: Put precision register in full binary state
+    #     [self.mod_exp_circ.h(self.working_bits + idx) for idx in range(self.precision_bits)]
+
+    #     # Step 2: Put LSB bit of working register in state |1>
+    #     self.mod_exp_circ.x(0)
+    #     # Step 2.1: Barrier
+    #     # self.mod_exp_circ.barrier(label='ME Init')
+
+    #     # Step 3: Multiply by 2^x conditioned on precision bit state |x>: 
+    #     for idx in range(self.precision_bits):
+    #         for exp in range(2 ** idx):
+    #             self.controlled_multiplication_by_2(control_bit=idx)
+
+    #         # Draw barrier after each modular exponentiation stage
+    #         # self.mod_exp_circ.barrier(label='ME 2^' + str(2 ** idx))
+    #     pass
+
 
 ## Testing ##
 a = 2; N = 15
-f = ShorCircuit(a, N, 6, 3)
-
-# f.shor_qft()
-
+f = ShorCircuit(a, N, 7, 3)
 # f.exponentiation()
+f_new = ShorCircuit(a, N, 7, 3)
+# # f_new.exponentiation()
+
+f_new_new = QuantumCircuit(3)
+# # f_new_new.exponentiation
+# # f.shor_qft()
+
+# # f.exponentiation()
+
+# # exponentiation_gate = f.create_exponentiation_gate()
+# # f.full_circuit.append()
+# # f.set_N_register()
+# f.add_mod_N()
+f_new.full_circuit.append(f_new_new.to_gate(label="Exp"), range(8, 11))
+f_new.full_circuit.barrier(label="$a^x$")
+f_new.full_circuit.append(f.full_circuit.to_gate(label="Add_modN"), range(0, f.total_bits))
+f_new.full_circuit.barrier(label="(W + B)Mod(N)")
+
 # f.shor_qft()
 # f.shor_precision_measure()
 # f.shor_run_qc()
 # f.shor_factors()
 
-f.set_N_register()
-f.add_mod_N()
+# f.set_N_register()
+# f.add_mod_N()
 #f.set_N_register()
 #f.shor_qft()
 
-f.shor_draw(scale=0.7, s_fold=75)
+# f.shor_draw(scale=0.7, s_fold=100)
+f_new.full_circuit.draw("mpl", initial_state=True, scale = 1, fold=100, filename=r"C:\Users\T480s\OneDrive\Documents\aKTH\KTH Second Year\DD2367\final_circuit_7W.jpg")
+
 # f.shor_circle_viz(cols=1, output='tp')
 
 
